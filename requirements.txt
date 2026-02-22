@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 streamlit
 pandas
 yfinance
+=======
+streamlit
+pandas
+yfinance
+>>>>>>> d338b99beb2aa3de7fca642818511d14821c59a4
 numpy
