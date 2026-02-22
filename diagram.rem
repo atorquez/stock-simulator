@@ -1,0 +1,69 @@
+                           ┌──────────────────────────────┐
+                           │        .streamlit/            │
+                           │      config.toml (Theme)      │
+                           │  • Global dark theme          │
+                           │  • Colors, fonts, layout      │
+                           └──────────────┬───────────────┘
+                                          │
+                                          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                app.py (Page 1)                               │
+│                                                                              │
+│  • Loads global CSS + theme                                                  │
+│  • Quick stock analyzer                                                      │
+│  • Calls analyze_stock()                                                     │
+│  • Displays results + Key Metrics Reference                                  │
+└───────────────┬──────────────────────────────────────────────────────────────┘
+                │
+                │ Streamlit multipage routing
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           pages/2_Financials_Explore.py                      │
+│                                                                              │
+│  • Select universe (S&P500 / NASDAQ100 / Custom)                             │
+│  • Load fundamentals                                                         │
+│  • Filter companies                                                          │
+│  • Save filtered list → session_state["filtered_df"]                         │
+│  • Save selected tickers → session_state["selected_financials"]              │
+└───────────────┬──────────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     pages/3_Buying_Opportunity_Analysis.py                   │
+│                                                                              │
+│  • Read selected tickers from session_state                                  │
+│  • Run analyze_stock() for each ticker                                       │
+│  • Compute composite score                                                   │
+│  • Rank opportunities                                                        │
+│  • Display detailed metrics                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+                ▲
+                │
+                │ Shared logic
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                               stock_engine.py                                │
+│                                                                              │
+│  • normalize_ticker()                                                        │
+│  • get_fundamentals()                                                        │
+│  • passes_fundamentals()                                                     │
+│  • analyze_stock()                                                           │
+│       - price history                                                        │
+│       - momentum                                                             │
+│       - risk                                                                 │
+│       - signal                                                               │
+│       - traffic light                                                        │
+│  • compute_fundamental_quality()                                             │
+│  • compute_composite_score()                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+                ▲
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                   data/                                      │
+│                                                                              │
+│  • sp500_list.py                                                             │
+│  • nasdaq100_list.py                                                         │
+│                                                                              │
+│  Provide static ticker universes                                             │
+└──────────────────────────────────────────────────────────────────────────────┘

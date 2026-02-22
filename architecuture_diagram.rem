@@ -1,0 +1,95 @@
+                           ┌──────────────────────────────┐
+                           │        .streamlit/            │
+                           │      config.toml (theme)      │
+                           │  • Global dark theme          │
+                           │  • Colors, fonts, layout      │
+                           └──────────────┬───────────────┘
+                                          │
+                                          ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                app.py (Page 1)                               │
+│                                                                              │
+│  • Loads global CSS + theme                                                  │
+│  • Quick stock analyzer                                                      │
+│  • Calls analyze_stock() directly                                            │
+│  • Displays results + Key Metrics Reference                                  │
+│                                                                              │
+└───────────────┬──────────────────────────────────────────────────────────────┘
+                │
+                │ Streamlit multipage routing
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           pages/2_Financials_Explore.py                      │
+│                                                                              │
+│  **DISCOVERY LAYER**                                                         │
+│                                                                              │
+│  1. Select Universe (S&P500 / NASDAQ100 / Custom)                            │
+│        ↓                                                                      │
+│  2. Load Fundamentals (get_fundamentals)                                     │
+│        ↓                                                                      │
+│  3. Filter Companies (Market Cap, ROE, etc.)                                 │
+│        ↓                                                                      │
+│  4. Save filtered list → st.session_state["filtered_df"]                     │
+│        ↓                                                                      │
+│  5. User selects companies for Page 3                                         │
+│        ↓                                                                      │
+│  Save tickers → st.session_state["selected_financials"]                      │
+│                                                                              │
+└───────────────┬──────────────────────────────────────────────────────────────┘
+                │
+                │ Uses session_state to pass data
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     pages/3_Buying_Opportunity_Analysis.py                   │
+│                                                                              │
+│  **OPPORTUNITY LAYER**                                                       │
+│                                                                              │
+│  1. Read selected tickers from session_state                                 │
+│        ↓                                                                      │
+│  2. For each ticker:                                                         │
+│        • analyze_stock()                                                     │
+│        • get_fundamentals()                                                  │
+│        • compute_fundamental_quality()                                       │
+│        • compute_composite_score()                                           │
+│        ↓                                                                      │
+│  3. Build ranked opportunity table                                           │
+│        ↓                                                                      │
+│  4. Display detailed metrics (momentum, risk, averages)                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+                ▲
+                │
+                │ Core logic used by ALL pages
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                               stock_engine.py                                │
+│                                                                              │
+│  **ENGINE LAYER (Pure Logic)**                                               │
+│                                                                              │
+│  • normalize_ticker()                                                        │
+│  • get_fundamentals()                                                        │
+│  • passes_fundamentals()                                                     │
+│  • analyze_stock()                                                           │
+│       - fetch price history                                                  │
+│       - compute momentum averages                                            │
+│       - compute Momentum Score                                               │
+│       - compute Risk Score                                                   │
+│       - generate BUY/HOLD/AVOID signal                                       │
+│       - assign Traffic Light                                                 │
+│  • compute_fundamental_quality()                                             │
+│  • compute_composite_score()                                                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+                ▲
+                │
+                │ Static ticker universes
+                ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                   data/                                      │
+│                                                                              │
+│  • sp500_list.py                                                             │
+│  • nasdaq100_list.py                                                         │
+│                                                                              │
+│  Provide clean ticker lists for Page 2                                       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘

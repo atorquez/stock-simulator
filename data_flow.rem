@@ -1,0 +1,44 @@
+User
+ │
+ ▼
+Page 2 — Financials Explorer
+ │
+ │ 1. Select Universe
+ │      ↓
+ │ 2. Load Fundamentals (calls get_fundamentals for each ticker)
+ │      ↓
+ │ 3. Filter Companies
+ │      ↓
+ │ 4. Save filtered list
+ │      → session_state["filtered_df"]
+ │      ↓
+ │ 5. User selects companies
+ │      → session_state["selected_financials"]
+ │
+ ▼
+Page 3 — Opportunity Analysis
+ │
+ │ 1. Read selected tickers
+ │      ← session_state["selected_financials"]
+ │
+ │ 2. For each ticker:
+ │      → analyze_stock()
+ │           • fetch price history
+ │           • compute momentum
+ │           • compute risk
+ │           • compute signal
+ │           • compute traffic light
+ │      → get_fundamentals()
+ │      → compute_fundamental_quality()
+ │      → compute_composite_score()
+ │
+ │ 3. Build ranked opportunity table
+ │
+ ▼
+User sees:
+ • Composite ranking
+ • Momentum averages
+ • Risk score
+ • Fundamental quality
+ • Traffic light
+ • BUY/HOLD/AVOID signal
