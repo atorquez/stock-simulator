@@ -20,6 +20,25 @@ def normalize_ticker(ticker: str) -> str:
     return TICKER_NORMALIZATION.get(ticker, ticker)
 
 
+# -------------------------------------------------------
+# COMPANY NAME CACHE (prevents repeated Yahoo calls)
+# -------------------------------------------------------
+COMPANY_CACHE = {}
+
+def get_company_name_cached(ticker):
+    """Fetch company name once and cache it for speed + reliability."""
+    if ticker in COMPANY_CACHE:
+        return COMPANY_CACHE[ticker]
+
+    try:
+        info = yf.Ticker(ticker).info
+        name = info.get("longName", "")
+        COMPANY_CACHE[ticker] = name
+        return name
+    except:
+        return ""
+
+
 # ---------------------------------------
 # FUNDAMENTAL EXTRACTION
 # ---------------------------------------
@@ -428,7 +447,7 @@ def analyze_trading_signals(
 
     # BUY RULE
     if band_width > 0:
-        lower_zone_threshold = lcl + 0.05 * (ucl - lcl)
+        lower_zone_threshold = lcl + 0.50 * (ucl - lcl)
         price_in_lower_zone = price <= lower_zone_threshold
     else:
         price_in_lower_zone = False
@@ -446,7 +465,7 @@ def analyze_trading_signals(
 
     # SELL RULE
     if band_width > 0:
-        upper_zone_threshold = ucl - 0.10 * (ucl - lcl)
+        upper_zone_threshold = ucl - 0.20 * (ucl - lcl)
         price_in_upper_zone = price >= upper_zone_threshold
     else:
         price_in_upper_zone = False
@@ -519,23 +538,27 @@ def analyze_trading_signals(
     ]
     confidence = float(sum(confidence_components) / len(confidence_components))
 
+    # ⭐ NEW: COMPANY NAME INCLUDED IN RETURN
+    company_name = get_company_name_cached(symbol)
+
     return {
-    "ticker": symbol,
-    "under_control": under_control,
-    "drift_direction": drift,
-    "buy_signal": buy_signal,
-    "sell_signal": sell_signal,
-    "days_since_buy": days_since_buy,
-    "days_under_control": days_under_control,
-    "confidence": confidence,
-    "band_width": band_width,
-    "indicators": {
-        "price": float(price),
-        "ma20": float(ma20),
-        "upper_limit": float(ucl),
-        "lower_limit": float(lcl),
-        "rsi": float(rsi) if rsi is not None else None,
-        "slope_5d": float(slope_5d),
-        "bollinger_position": bollinger_pos,
-    },
-}
+        "ticker": symbol,
+        "company_name": company_name,   # ⭐ NEW FIELD
+        "under_control": under_control,
+        "drift_direction": drift,
+        "buy_signal": buy_signal,
+        "sell_signal": sell_signal,
+        "days_since_buy": days_since_buy,
+        "days_under_control": days_under_control,
+        "confidence": confidence,
+        "band_width": band_width,
+        "indicators": {
+            "price": float(price),
+            "ma20": float(ma20),
+            "upper_limit": float(ucl),
+            "lower_limit": float(lcl),
+            "rsi": float(rsi) if rsi is not None else None,
+            "slope_5d": float(slope_5d),
+            "bollinger_position": bollinger_pos,
+        },
+    }

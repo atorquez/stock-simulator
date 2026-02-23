@@ -12,16 +12,8 @@ from data.nasdaq100_list import TICKERS as NASDAQ100_TICKERS
 TRACK_FILE = "data/tracked_stocks.json"
 
 # ---------------------------------------
-# HELPERS
+# TRACKED STOCKS HELPERS
 # ---------------------------------------
-@st.cache_data
-def get_company_name(ticker):
-    try:
-        info = yf.Ticker(ticker).info
-        return info.get("longName", "")
-    except:
-        return ""
-
 def load_tracked_stocks():
     if not os.path.exists(TRACK_FILE):
         return []
@@ -36,8 +28,12 @@ def save_tracked_stocks(tracked_list):
     with open(TRACK_FILE, "w") as f:
         json.dump({"tracked": tracked_list}, f, indent=4)
 
+# ---------------------------------------
+# PRICE HISTORY FOR SPC CHART
+# ---------------------------------------
 @st.cache_data
-def fetch_history(ticker, period="180d"):
+def fetch_history(ticker, period="45d"):
+    """Fetch only the last ~45 days of data (enough for MA20 + 20-day chart)."""
     try:
         df = yf.download(ticker, period=period)
         if df is None or df.empty:
@@ -54,36 +50,25 @@ def compute_rsi(series, window=14):
     return 100 - (100 / (1 + rs))
 
 # ---------------------------------------
-# BULLETPROOF SPC CHART
+# SPC CHART (20-day view)
 # ---------------------------------------
 def plot_spc_chart(ticker, window, control_k):
 
-    hist = fetch_history(ticker, period="180d")
+    hist = fetch_history(ticker, period="45d")
     if hist is None or hist.empty:
-        hist = fetch_history(ticker, period="1y")
-
-    if hist is None or hist.empty:
-        st.warning("No valid price history available for this ticker.")
         return
 
     if isinstance(hist.columns, pd.MultiIndex):
         hist.columns = hist.columns.get_level_values(0)
 
     if "Close" not in hist.columns:
-        st.warning("Price history is missing a 'Close' column for this ticker.")
         return
 
-    if hist["Close"].dropna().empty:
-        st.warning("All Close prices are NaN — cannot plot SPC chart.")
+    close = hist["Close"].dropna()
+
+    if len(close) < window:
         return
 
-    hist = hist.dropna(subset=["Close"])
-
-    if len(hist) < window:
-        st.warning(f"Not enough data to compute MA{window}.")
-        return
-
-    close = hist["Close"]
     ma = close.rolling(window=window).mean()
     std = close.rolling(window=window).std()
 
@@ -97,26 +82,52 @@ def plot_spc_chart(ticker, window, control_k):
         "UCL": ucl,
         "LCL": lcl,
         "RSI": rsi
-    }).dropna()
+    }).dropna(subset=["Close", "MA", "UCL", "LCL"])
+
+    # ⭐ Only show last 20 days
+    df_plot = df_plot.tail(20)
 
     if df_plot.empty:
-        st.warning("Not enough valid data to plot SPC chart.")
         return
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Close"], name="Price", line=dict(color="white")))
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["MA"], name=f"MA{window}", line=dict(color="orange")))
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["UCL"], name="Upper Control Limit", line=dict(color="red", dash="dash")))
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["LCL"], name="Lower Control Limit", line=dict(color="green", dash="dash")))
+    fig.add_trace(go.Scatter(
+        x=df_plot.index, y=df_plot["Close"],
+        name="Price", line=dict(color="white")
+    ))
 
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["RSI"], name="RSI", line=dict(color="cyan"), yaxis="y2"))
+    fig.add_trace(go.Scatter(
+        x=df_plot.index, y=df_plot["MA"],
+        name=f"MA{window}", line=dict(color="orange")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df_plot.index, y=df_plot["UCL"],
+        name="Upper Control Limit", line=dict(color="red", dash="dash")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df_plot.index, y=df_plot["LCL"],
+        name="Lower Control Limit", line=dict(color="green", dash="dash")
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=df_plot.index, y=df_plot["RSI"],
+        name="RSI", line=dict(color="cyan"),
+        yaxis="y2"
+    ))
 
     fig.update_layout(
         height=700,
         template="plotly_dark",
         yaxis=dict(domain=[0.35, 1.0], title="Price"),
-        yaxis2=dict(domain=[0.0, 0.25], title="RSI", anchor="x"),
+        yaxis2=dict(
+            domain=[0.0, 0.25],
+            title="RSI",
+            overlaying="y",
+            side="right"
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -151,7 +162,7 @@ selected_tracked = st.sidebar.multiselect(
     "Tracked Stocks",
     options=tracked,
     default=tracked,
-    format_func=lambda x: f"{x} — {get_company_name(x)}"
+    format_func=lambda x: x  # company name now comes from engine
 )
 
 new_ticker = st.sidebar.text_input("Add a ticker (e.g., AAPL)").upper()
@@ -160,7 +171,7 @@ if st.sidebar.button("Add Ticker"):
     if new_ticker and new_ticker not in tracked:
         tracked.append(new_ticker)
         save_tracked_stocks(sorted(list(set(tracked))))
-        st.sidebar.success(f"Added {new_ticker} — {get_company_name(new_ticker)}")
+        st.sidebar.success(f"Added {new_ticker}")
     else:
         st.sidebar.warning("Ticker is empty or already tracked.")
 
@@ -186,8 +197,7 @@ tracked = load_tracked_stocks()
 st.subheader("📌 Stocks Being Tracked")
 
 if tracked:
-    tracked_display = [f"{t} — {get_company_name(t)}" for t in tracked]
-    st.write(", ".join(tracked_display))
+    st.write(", ".join(tracked))
 else:
     st.info("No stocks are being tracked yet. Using selected universe as starting point.")
 
@@ -224,7 +234,7 @@ else:
 st.write(f"Analyzing **{len(universe)}** symbols…")
 
 # ---------------------------------------
-# RUN ANALYSIS
+# RUN ANALYSIS (SKIP INVALID TICKERS)
 # ---------------------------------------
 results = []
 
@@ -236,9 +246,11 @@ for i, symbol in enumerate(universe):
         control_k=control_k,
         max_hold_days=max_hold_days
     )
-    if res:
-        results.append(res)
 
+    if res is None:
+        continue
+
+    results.append(res)
     progress.progress((i + 1) / len(universe))
 
 if not results:
@@ -251,7 +263,7 @@ if not results:
 df = pd.DataFrame([
     {
         "Symbol": r["ticker"],
-        "Name": get_company_name(r["ticker"]),
+        "Name": r["company_name"],   # ⭐ NEW
         "Under Control": r["under_control"],
         "Drift": r["drift_direction"],
         "Buy": r["buy_signal"],
@@ -275,10 +287,21 @@ df_sorted = df.sort_values(
 # ---------------------------------------
 # TOP 20 UNDER CONTROL
 # ---------------------------------------
-df_top = df_sorted[df_sorted["Under Control"] == True].head(20)
+df_top = df_sorted[df_sorted["Under Control"] == True].head(100)
 
 st.subheader("📊 Top 20 Under‑Control Trading Candidates")
 st.dataframe(df_top, use_container_width=True)
+
+# ---------------------------------------
+# ⭐ NEW: DRIFT SUMMARY TABLE
+# ---------------------------------------
+st.subheader("📈 Drift Summary (Top 20)")
+
+df_drift = df_top[[
+    "Symbol", "Name", "Drift", "Price", "Days Under Control", "RSI", "Band Width"
+]]
+
+st.dataframe(df_drift, use_container_width=True)
 
 # ---------------------------------------
 # BUY / SELL LOGIC
@@ -305,9 +328,9 @@ else:
     sell_choice = st.selectbox(
         "Select a SELL candidate to view SPC chart",
         df_sell["Symbol"].tolist(),
-        format_func=lambda x: f"{x} — {get_company_name(x)}"
+        format_func=lambda x: f"{x} — {df_sell[df_sell['Symbol']==x]['Name'].iloc[0]}"
     )
-    st.write(f"#### SPC Chart — SELL Candidate: {sell_choice} — {get_company_name(sell_choice)}")
+    st.write(f"#### SPC Chart — SELL Candidate: {sell_choice}")
     plot_spc_chart(sell_choice, window=window, control_k=control_k)
 
 # ---------------------------------------
@@ -323,7 +346,6 @@ df_buy = df_top[
 if df_buy.empty:
     st.info("No BUY candidates — none are drifting down.")
 else:
-    df_buy["Name"] = df_buy["Symbol"].apply(get_company_name)
     st.dataframe(df_buy, use_container_width=True)
 
     total_cost = df_buy["Price"].sum()
@@ -332,9 +354,9 @@ else:
     buy_choice = st.selectbox(
         "Select a BUY candidate to view SPC chart",
         df_buy["Symbol"].tolist(),
-        format_func=lambda x: f"{x} — {get_company_name(x)}"
+        format_func=lambda x: f"{x} — {df_buy[df_buy['Symbol']==x]['Name'].iloc[0]}"
     )
-    st.write(f"#### SPC Chart — BUY Candidate: {buy_choice} — {get_company_name(buy_choice)}")
+    st.write(f"#### SPC Chart — BUY Candidate: {buy_choice}")
     plot_spc_chart(buy_choice, window=window, control_k=control_k)
 
 # ---------------------------------------
@@ -354,7 +376,7 @@ st.subheader("🔍 Detailed View (Top 20)")
 selected_symbol = st.selectbox(
     "Select a symbol for detailed indicators",
     df_top["Symbol"].tolist(),
-    format_func=lambda x: f"{x} — {get_company_name(x)}"
+    format_func=lambda x: f"{x} — {df_top[df_top['Symbol']==x]['Name'].iloc[0]}"
 )
 
 detail = next(r for r in results if r["ticker"] == selected_symbol)
@@ -362,16 +384,32 @@ detail = next(r for r in results if r["ticker"] == selected_symbol)
 st.write("### Indicators")
 st.json(detail["indicators"])
 
+# ⭐ Always show SPC chart for any Top 20 ticker (20‑day view)
+st.write("### SPC Chart (Last 20 Days)")
+plot_spc_chart(selected_symbol, window=window, control_k=control_k)
+
+# ---------------------------------------
+# ⭐ SIGNALS (MOVED ABOVE DEFINITIONS)
+# ---------------------------------------
+st.write("### Signals")
+st.write(f"**Under Control:** {detail['under_control']}")
+st.write(f"**Drift:** {detail['drift_direction']}")
+st.write(f"**Buy Signal:** {detail['buy_signal']}")
+st.write(f"**Sell Signal:** {detail['sell_signal']}")
+st.write(f"**Confidence:** {detail['confidence']:.2f}")
+st.write(f"**Band Width:** {detail['band_width']:.2f}")
+st.write(f"**Days Under Control:** {detail['days_under_control']}")
+
 # ---------------------------------------
 # DEBUG PANEL — WHY BUY FAILED OR SUCCEEDED
 # ---------------------------------------
 st.write("### Debug Panel — BUY Rule Breakdown")
 
 debug_info = {
-    "Price in Lower Zone (Bottom 5%)": (
+    "Price in Lower Zone (Bottom X%)": (
         detail["indicators"]["price"] <= 
         detail["indicators"]["lower_limit"] + 
-        0.05 * (detail["indicators"]["upper_limit"] - detail["indicators"]["lower_limit"])
+        0.10 * (detail["indicators"]["upper_limit"] - detail["indicators"]["lower_limit"])
     ),
     "Drift is Down": (detail["drift_direction"] == "down"),
     "Under Control": detail["under_control"],
@@ -381,7 +419,7 @@ debug_info = {
 st.json(debug_info)
 
 # ---------------------------------------
-# KEY DEFINITIONS FOR USER TESTERS
+# DEFINITIONS (MOVED TO BOTTOM)
 # ---------------------------------------
 st.write("### 📘 Key Definitions (How This Model Works)")
 
@@ -404,13 +442,13 @@ The short-term slope of price over the last 5 days.
 The distance between UCL and LCL.  
 Wider bands indicate larger oscillation amplitude and more profit potential.
 
-**Bottom 5% Zone (BUY Zone)**  
-The lowest 5% of the control band.  
+**Bottom Zone (BUY Zone)**  
+The lowest X% of the control band.  
 A BUY signal requires the price to be inside this zone.
 
 **BUY Signal Requirements**  
 A stock triggers a BUY signal only if:  
-- Price is in the bottom 5% of the band  
+- Price is in the bottom X% of the band  
 - Drift direction is down  
 - Stock is under control  
 - RSI < 60  
@@ -422,13 +460,3 @@ A stock triggers a SELL signal when:
 - Stock is under control  
 - RSI > 40  
 """)
-
-
-st.write("### Signals")
-st.write(f"**Under Control:** {detail['under_control']}")
-st.write(f"**Drift:** {detail['drift_direction']}")
-st.write(f"**Buy Signal:** {detail['buy_signal']}")
-st.write(f"**Sell Signal:** {detail['sell_signal']}")
-st.write(f"**Confidence:** {detail['confidence']:.2f}")
-st.write(f"**Band Width:** {detail['band_width']:.2f}")
-st.write(f"**Days Under Control:** {detail['days_under_control']}")
