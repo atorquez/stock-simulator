@@ -4,12 +4,14 @@ import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
 
-
+# ---------------------------------------
+# GLOBAL CONSTANTS
+# ---------------------------------------
 SHORT_WINDOW = 20
 LONG_WINDOW = 50
 
 # ---------------------------------------
-# TICKER NORMALIZATION (fix Yahoo issues)
+# TICKER NORMALIZATION
 # ---------------------------------------
 TICKER_NORMALIZATION = {
     "BRK.B": "BRK-B",
@@ -19,10 +21,9 @@ TICKER_NORMALIZATION = {
 def normalize_ticker(ticker: str) -> str:
     return TICKER_NORMALIZATION.get(ticker, ticker)
 
-
-# -------------------------------------------------------
-# COMPANY NAME CACHE (prevents repeated Yahoo calls)
-# -------------------------------------------------------
+# ---------------------------------------
+# COMPANY NAME CACHE
+# ---------------------------------------
 COMPANY_CACHE = {}
 
 def get_company_name_cached(ticker):
@@ -38,9 +39,8 @@ def get_company_name_cached(ticker):
     except:
         return ""
 
-
 # ---------------------------------------
-# FUNDAMENTAL EXTRACTION
+# FUNDAMENTALS
 # ---------------------------------------
 def get_fundamentals(ticker: str):
     """Fetch key fundamentals safely."""
@@ -68,10 +68,6 @@ def get_fundamentals(ticker: str):
     except Exception:
         return {}
 
-
-# ---------------------------------------
-# FUNDAMENTAL FILTER
-# ---------------------------------------
 def passes_fundamentals(f):
     """Broad quality filter — removes weak companies only."""
     mkt_cap = f.get("Market Cap") or 0
@@ -96,11 +92,8 @@ def passes_fundamentals(f):
 
     return True
 
-
-# ---------------------------------------
-# FUNDAMENTAL QUALITY SCORE (0–100)
-# ---------------------------------------
 def compute_fundamental_quality(f):
+    """Score fundamentals on a 0–100 scale."""
     score = 0
 
     # ROE
@@ -130,11 +123,8 @@ def compute_fundamental_quality(f):
 
     return min(score, 100)
 
-
-# ---------------------------------------
-# COMPOSITE SCORE
-# ---------------------------------------
 def compute_composite_score(momentum_score, risk_score, fundamental_quality):
+    """Weighted composite score."""
     m = momentum_score or 0
     r = risk_score or 100
     fq = fundamental_quality or 0
@@ -145,7 +135,6 @@ def compute_composite_score(momentum_score, risk_score, fundamental_quality):
         0.2 * (100 - r)
     )
     return composite
-
 
 # ---------------------------------------
 # PRICE HISTORY
@@ -160,7 +149,6 @@ def fetch_history(symbol, period="24mo"):
         return data
     except Exception:
         return None
-
 
 # ---------------------------------------
 # MOVING AVERAGES
@@ -178,13 +166,11 @@ def compute_multi_averages(data):
         "avg_24m": round(avg(504), 2),
     }
 
-
 def is_structural_decline(avgs):
     return (
         avgs["avg_3m"] < avgs["avg_6m"] <
         avgs["avg_12m"] < avgs["avg_24m"]
     )
-
 
 # ---------------------------------------
 # RISK SCORE
@@ -198,7 +184,6 @@ def compute_risk_score(data):
     vol = returns.std()
     score = min(100, max(0, vol * 1000))
     return round(score, 1)
-
 
 # ---------------------------------------
 # MOMENTUM SCORE
@@ -216,7 +201,6 @@ def compute_momentum_score(data, avgs):
     raw = 50 + 100 * (0.5 * rel_to_12m + 0.5 * rel_3m_vs_12m)
     score = min(100, max(0, raw))
     return round(score, 1)
-
 
 # ---------------------------------------
 # DAYS UNDER CONTROL
@@ -244,7 +228,6 @@ def compute_days_under_control(close, ma, upper, lower, std, window):
 
     return days
 
-
 # ---------------------------------------
 # TRAFFIC LIGHT
 # ---------------------------------------
@@ -264,9 +247,8 @@ def traffic_light(signal, risk_score, momentum_score):
 
     return "🟡 Yellow"
 
-
 # ---------------------------------------
-# SIGNAL GENERATION
+# LONG-TERM SIGNAL
 # ---------------------------------------
 def generate_signal(data):
     close = data["Close"]
@@ -290,7 +272,6 @@ def generate_signal(data):
         return "BUY", avgs
     else:
         return "HOLD", avgs
-
 
 # ---------------------------------------
 # INDICATORS
@@ -322,9 +303,8 @@ def fetch_indicators(symbol):
     except Exception:
         return {}
 
-
 # ---------------------------------------
-# FULL ANALYSIS PIPELINE
+# FULL LONG-TERM ANALYSIS
 # ---------------------------------------
 def analyze_stock(symbol):
     """Full pipeline for one stock."""
@@ -352,8 +332,6 @@ def analyze_stock(symbol):
         "Avg 24M": avgs["avg_24m"],
         **indicators
     }
-
-
 # ---------------------------------------
 # SHORT-TERM TRADING ENGINE (SPC-STYLE)
 # ---------------------------------------
@@ -385,14 +363,20 @@ def compute_drift(close, lookback=5):
         return 0.0, "flat"
 
     slope = close.iloc[-1] - close.iloc[-(lookback + 1)]
+
     if slope > 0:
         direction = "up"
     elif slope < 0:
         direction = "down"
     else:
         direction = "flat"
+
     return slope, direction
 
+
+# ---------------------------------------
+# ⭐ PATCHED analyze_trading_signals()
+# ---------------------------------------
 
 def analyze_trading_signals(
     ticker: str,
@@ -401,16 +385,44 @@ def analyze_trading_signals(
     max_hold_days: int = 10
 ) -> dict | None:
 
+    # ALWAYS DEFINE COMPANY NAME FIRST
     symbol = normalize_ticker(ticker)
+    company_name = get_company_name_cached(symbol) or symbol
 
+    # FETCH HISTORY
     data = fetch_history(symbol, period="6mo")
     if data is None or data.empty:
-        return None
+        return {
+            "ticker": symbol,
+            "company_name": company_name,
+            "under_control": False,
+            "drift_direction": None,
+            "buy_signal": False,
+            "sell_signal": False,
+            "days_since_buy": None,
+            "days_under_control": 0,
+            "confidence": 0,
+            "band_width": 0,
+            "indicators": {}
+        }
 
     close = data["Close"].dropna()
     if close.empty:
-        return None
+        return {
+            "ticker": symbol,
+            "company_name": company_name,
+            "under_control": False,
+            "drift_direction": None,
+            "buy_signal": False,
+            "sell_signal": False,
+            "days_since_buy": None,
+            "days_under_control": 0,
+            "confidence": 0,
+            "band_width": 0,
+            "indicators": {}
+        }
 
+    # CONTROL LIMITS
     ma, upper_limit, lower_limit, std = compute_control_limits(
         close, window=window, k=control_k
     )
@@ -435,6 +447,7 @@ def analyze_trading_signals(
         and std.iloc[-1] <= recent_std * 1.5
     )
 
+    # DRIFT + RSI
     slope_5d, drift = compute_drift(close, lookback=5)
 
     rsi_series = compute_RSI(close, period=14)
@@ -482,15 +495,16 @@ def analyze_trading_signals(
 
     # MAX HOLD WINDOW
     days_since_buy = None
+
     if len(close) > window + max_hold_days and band_width > 0:
         for i in range(1, max_hold_days + 1):
+
             sub_close = close.iloc[: -i + 1] if i > 1 else close
             sub_ma, sub_u, sub_l, sub_std = compute_control_limits(
                 sub_close, window=window, k=control_k
             )
 
             p_i = sub_close.iloc[-1]
-            ma_i = sub_ma.iloc[-1]
             u_i = sub_u.iloc[-1]
             l_i = sub_l.iloc[-1]
 
@@ -530,6 +544,7 @@ def analyze_trading_signals(
     if days_since_buy is not None and days_since_buy > max_hold_days:
         sell_signal = True
 
+    # CONFIDENCE SCORE
     confidence_components = [
         1.0 if under_control else 0.0,
         1.0 if drift == "down" else 0.0,
@@ -538,12 +553,10 @@ def analyze_trading_signals(
     ]
     confidence = float(sum(confidence_components) / len(confidence_components))
 
-    # ⭐ NEW: COMPANY NAME INCLUDED IN RETURN
-    company_name = get_company_name_cached(symbol)
-
+    # FINAL RETURN — ALWAYS SAFE
     return {
         "ticker": symbol,
-        "company_name": company_name,   # ⭐ NEW FIELD
+        "company_name": company_name,
         "under_control": under_control,
         "drift_direction": drift,
         "buy_signal": buy_signal,
@@ -553,11 +566,11 @@ def analyze_trading_signals(
         "confidence": confidence,
         "band_width": band_width,
         "indicators": {
-            "price": float(price),
-            "ma20": float(ma20),
+            "price": float(price) if price is not None else 0.0,
+            "ma20": float(ma20) if ma20 is not None else 0.0,
             "upper_limit": float(ucl),
             "lower_limit": float(lcl),
-            "rsi": float(rsi) if rsi is not None else None,
+            "rsi": float(rsi) if rsi is not None else 0.0,
             "slope_5d": float(slope_5d),
             "bollinger_position": bollinger_pos,
         },

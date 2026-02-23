@@ -271,10 +271,10 @@ df = pd.DataFrame([
         "Band Width": r["band_width"],
         "Confidence": r["confidence"],
         "Days Under Control": r["days_under_control"],
-        "RSI": r["indicators"]["rsi"],
-        "Slope 5D": r["indicators"]["slope_5d"],
-        "Price": r["indicators"]["price"],
-        "MA20": r["indicators"]["ma20"],
+        "RSI": r["indicators"].get("rsi", 0),
+        "Slope 5D": r["indicators"].get("slope_5d", 0),
+        "Price": r["indicators"].get("price", 0),
+        "MA20": r["indicators"].get("ma20", 0),
     }
     for r in results
 ])
