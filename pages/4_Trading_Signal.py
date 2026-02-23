@@ -263,7 +263,7 @@ if not results:
 df = pd.DataFrame([
     {
         "Symbol": r["ticker"],
-        "Name": r["company_name"],   # ⭐ NEW
+        "Name": r.get("company_name", ""),
         "Under Control": r["under_control"],
         "Drift": r["drift_direction"],
         "Buy": r["buy_signal"],
@@ -373,20 +373,29 @@ if st.button("🔁 Update 'Stocks Being Tracked' Automatically"):
 # ---------------------------------------
 st.subheader("🔍 Detailed View (Top 20)")
 
+# Build dropdown from results, not df_top
+symbols = [r["ticker"] for r in results]
+
+# Build a lookup for names
+name_lookup = {r["ticker"]: r.get("company_name", "") for r in results}
+
 selected_symbol = st.selectbox(
     "Select a symbol for detailed indicators",
-    df_top["Symbol"].tolist(),
-    format_func=lambda x: f"{x} — {df_top[df_top['Symbol']==x]['Name'].iloc[0]}"
+    symbols,
+    format_func=lambda x: f"{x} — {name_lookup.get(x, '')}"
 )
 
-detail = next(r for r in results if r["ticker"] == selected_symbol)
+# Safe lookup
+detail = next((r for r in results if r["ticker"] == selected_symbol), None)
 
-st.write("### Indicators")
-st.json(detail["indicators"])
+if detail is None:
+    st.warning("No data available for the selected symbol.")
+else:
+    st.write("### Indicators")
+    st.json(detail["indicators"])
 
-# ⭐ Always show SPC chart for any Top 20 ticker (20‑day view)
-st.write("### SPC Chart (Last 20 Days)")
-plot_spc_chart(selected_symbol, window=window, control_k=control_k)
+    st.write("### SPC Chart (Last 20 Days)")
+    plot_spc_chart(selected_symbol, window=window, control_k=control_k)
 
 # ---------------------------------------
 # ⭐ SIGNALS (MOVED ABOVE DEFINITIONS)
