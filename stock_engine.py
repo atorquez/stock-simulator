@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -52,7 +51,7 @@ def get_fundamentals(ticker: str):
 
 
 # ---------------------------------------
-# FUNDAMENTAL FILTER (broad quality gate)
+# FUNDAMENTAL FILTER
 # ---------------------------------------
 def passes_fundamentals(f):
     """Broad quality filter — removes weak companies only."""
@@ -114,7 +113,7 @@ def compute_fundamental_quality(f):
 
 
 # ---------------------------------------
-# COMPOSITE SCORE (Momentum + Fundamentals + Risk)
+# COMPOSITE SCORE
 # ---------------------------------------
 def compute_composite_score(momentum_score, risk_score, fundamental_quality):
     m = momentum_score or 0
@@ -200,17 +199,14 @@ def compute_momentum_score(data, avgs):
     return round(score, 1)
 
 
+# ---------------------------------------
+# DAYS UNDER CONTROL
+# ---------------------------------------
 def compute_days_under_control(close, ma, upper, lower, std, window):
-    """
-    Count how many consecutive days (including today)
-    the stock has stayed inside control limits AND
-    maintained stable volatility.
-    """
     days = 0
     n = len(close)
 
     for i in range(n - 1, -1, -1):
-        # Stop if limits or std are missing
         if pd.isna(upper.iloc[i]) or pd.isna(lower.iloc[i]) or pd.isna(std.iloc[i]):
             break
 
@@ -218,12 +214,10 @@ def compute_days_under_control(close, ma, upper, lower, std, window):
         u_i = upper.iloc[i]
         l_i = lower.iloc[i]
 
-        # Volatility stability check
         recent_std_i = std.iloc[max(0, i - window + 1): i + 1].mean()
         if std.iloc[i] > recent_std_i * 1.5:
             break
 
-        # Must be inside the band
         if not (l_i <= price_i <= u_i):
             break
 
@@ -231,8 +225,9 @@ def compute_days_under_control(close, ma, upper, lower, std, window):
 
     return days
 
+
 # ---------------------------------------
-# SIGNAL + TRAFFIC LIGHT
+# TRAFFIC LIGHT
 # ---------------------------------------
 def traffic_light(signal, risk_score, momentum_score):
     sig_upper = signal.upper()
@@ -251,6 +246,9 @@ def traffic_light(signal, risk_score, momentum_score):
     return "🟡 Yellow"
 
 
+# ---------------------------------------
+# SIGNAL GENERATION
+# ---------------------------------------
 def generate_signal(data):
     close = data["Close"]
     start_price = close.iloc[0]
@@ -336,12 +334,12 @@ def analyze_stock(symbol):
         **indicators
     }
 
+
 # ---------------------------------------
 # SHORT-TERM TRADING ENGINE (SPC-STYLE)
 # ---------------------------------------
 
 def compute_RSI(series, period=14):
-    """Compute RSI from a price series."""
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -355,7 +353,6 @@ def compute_RSI(series, period=14):
 
 
 def compute_control_limits(close, window=20, k=2.0):
-    """Compute SPC-style control limits (centerline ± k * std)."""
     ma = close.rolling(window).mean()
     std = close.rolling(window).std()
 
@@ -365,7 +362,6 @@ def compute_control_limits(close, window=20, k=2.0):
 
 
 def compute_drift(close, lookback=5):
-    """Compute simple drift direction based on lookback slope."""
     if len(close) <= lookback:
         return 0.0, "flat"
 
@@ -385,21 +381,9 @@ def analyze_trading_signals(
     control_k: float = 2.0,
     max_hold_days: int = 10
 ) -> dict | None:
-    """
-    Short-term trading analysis using SPC-style control logic.
 
-    Returns a dict with:
-        - under_control
-        - drift_direction
-        - buy_signal
-        - sell_signal
-        - confidence
-        - band_width
-        - indicators (price, ma20, limits, rsi, slope, bollinger_position)
-    """
     symbol = normalize_ticker(ticker)
 
-    # Use existing history fetcher for consistency
     data = fetch_history(symbol, period="6mo")
     if data is None or data.empty:
         return None
@@ -408,25 +392,21 @@ def analyze_trading_signals(
     if close.empty:
         return None
 
-    # --- Control limits (SPC-style) ---
     ma, upper_limit, lower_limit, std = compute_control_limits(
         close, window=window, k=control_k
     )
 
     days_under_control = compute_days_under_control(
-    close, ma, upper_limit, lower_limit, std, window
+        close, ma, upper_limit, lower_limit, std, window
     )
-    
-    # Use last valid point
+
     ma20 = ma.iloc[-1]
     ucl = upper_limit.iloc[-1]
     lcl = lower_limit.iloc[-1]
     price = close.iloc[-1]
 
-    # Band width
     band_width = float(ucl - lcl) if pd.notna(ucl) and pd.notna(lcl) else 0.0
 
-    # --- Under-control condition ---
     recent_std = std.iloc[-window:].mean() if std.iloc[-window:].notna().any() else std.mean()
     under_control = (
         pd.notna(ucl)
@@ -436,22 +416,17 @@ def analyze_trading_signals(
         and std.iloc[-1] <= recent_std * 1.5
     )
 
-    # --- Drift direction (5-day slope) ---
     slope_5d, drift = compute_drift(close, lookback=5)
 
-    # --- RSI ---
     rsi_series = compute_RSI(close, period=14)
     rsi = float(rsi_series.iloc[-1]) if not rsi_series.dropna().empty else None
 
-    # --- Bollinger-style position inside band (0–1) ---
     if pd.notna(ucl) and pd.notna(lcl) and (ucl - lcl) > 0:
         bollinger_pos = float((price - lcl) / (ucl - lcl))
     else:
         bollinger_pos = 0.5
 
-    # ============================================================
-    #  SPC-STYLE BUY RULE (Bottom-Zone Entry)
-    # ============================================================
+    # BUY RULE
     if band_width > 0:
         lower_zone_threshold = lcl + 0.05 * (ucl - lcl)
         price_in_lower_zone = price <= lower_zone_threshold
@@ -469,9 +444,7 @@ def analyze_trading_signals(
         rsi_ok_for_buy
     )
 
-    # ============================================================
-    #  SPC-STYLE SELL RULE (Top-Zone Exit)
-    # ============================================================
+    # SELL RULE
     if band_width > 0:
         upper_zone_threshold = ucl - 0.10 * (ucl - lcl)
         price_in_upper_zone = price >= upper_zone_threshold
@@ -488,7 +461,7 @@ def analyze_trading_signals(
         rsi_ok_for_sell
     )
 
-    # --- Max hold window (algorithmic lookback using bottom-zone BUY rule) ---
+    # MAX HOLD WINDOW
     days_since_buy = None
     if len(close) > window + max_hold_days and band_width > 0:
         for i in range(1, max_hold_days + 1):
@@ -538,7 +511,6 @@ def analyze_trading_signals(
     if days_since_buy is not None and days_since_buy > max_hold_days:
         sell_signal = True
 
-    # --- Confidence score (aligned with bottom-zone geometry) ---
     confidence_components = [
         1.0 if under_control else 0.0,
         1.0 if drift == "down" else 0.0,
@@ -548,193 +520,22 @@ def analyze_trading_signals(
     confidence = float(sum(confidence_components) / len(confidence_components))
 
     return {
-        "ticker": symbol,
-        "under_control": under_control,
-        "drift_direction": drift,
-        "buy_signal": buy_signal,
-        "sell_signal": sell_signal,
-        "days_since_buy": days_since_buy,
-        "days_under_control": days_under_control,
-        "confidence": confidence,
-        "band_width": band_width,
-        "indicators": {
-            "price": float(price),
-            "ma20": float(ma20),
-            "upper_limit": float(ucl),
-            "lower_limit": float(lcl),
-            "rsi": float(rsi) if rsi is not None else None,
-            "slope_5d": float(slope_5d),
-            "bollinger_position": bollinger_pos,
-        },
-=======
-import yfinance as yf
-import pandas as pd
-import numpy as np
-
-SHORT_WINDOW = 20
-LONG_WINDOW = 50
-
-
-def fetch_history(symbol, period="24mo"):
-    """Fetch historical data safely."""
-    try:
-        data = yf.Ticker(symbol).history(period=period)
-        return data if not data.empty else None
-    except:
-        return None
-
-
-def compute_multi_averages(data):
-    close = data["Close"]
-
-    def avg(days):
-        return close.iloc[-days:].mean() if len(close) >= days else close.mean()
-
-    return {
-        "avg_3m": round(avg(63), 2),     # 3 months
-        "avg_6m": round(avg(126), 2),    # 6 months
-        "avg_12m": round(avg(252), 2),   # 12 months
-        "avg_24m": round(avg(504), 2),   # 24 months
-    }
-
-
-def is_structural_decline(avgs):
-    return (
-        avgs["avg_3m"] < avgs["avg_6m"] <
-        avgs["avg_12m"] < avgs["avg_24m"]
-    )
-
-
-def compute_risk_score(data):
-    """Simple volatility-based risk score (0–100)."""
-    close = data["Close"]
-    returns = close.pct_change().dropna()
-    if returns.empty:
-        return 50
-
-    vol = returns.std()  # daily volatility
-    # Map vol roughly into 0–100
-    score = min(100, max(0, vol * 1000))
-    return round(score, 1)
-
-
-def compute_momentum_score(data, avgs):
-    """Momentum based on price vs 12m avg and 3m vs 12m."""
-    close = data["Close"]
-    end_price = close.iloc[-1]
-
-    if avgs["avg_12m"] == 0:
-        return 50
-
-    rel_to_12m = (end_price - avgs["avg_12m"]) / avgs["avg_12m"]
-    rel_3m_vs_12m = (avgs["avg_3m"] - avgs["avg_12m"]) / avgs["avg_12m"]
-
-    raw = 50 + 100 * (0.5 * rel_to_12m + 0.5 * rel_3m_vs_12m)
-    score = min(100, max(0, raw))
-    return round(score, 1)
-
-
-def traffic_light(signal, risk_score, momentum_score):
-    """
-    Return a simple traffic-light label:
-    - Green: BUY or strong momentum, moderate risk
-    - Yellow: HOLD or mixed
-    - Red: AVOID / SPECULATIVE / very high risk
-    """
-    sig_upper = signal.upper()
-
-    if "AVOID" in sig_upper:
-        return "🔴 Red"
-    if "SPECULATIVE" in sig_upper:
-        return "🔴 Red"
-
-    if "BUY" in sig_upper and momentum_score >= 60 and risk_score <= 60:
-        return "🟢 Green"
-
-    if risk_score >= 80:
-        return "🔴 Red"
-
-    return "🟡 Yellow"
-
-
-def generate_signal(data):
-    close = data["Close"]
-    start_price = close.iloc[0]
-    end_price = close.iloc[-1]
-
-    avgs = compute_multi_averages(data)
-
-    # 1. Structural decline override
-    if is_structural_decline(avgs):
-        base_signal = "AVOID - STRUCTURAL DECLINE"
-        return base_signal, avgs
-
-    # 2. Long-term collapse override
-    if end_price < 0.5 * start_price:
-        base_signal = "AVOID - LONG TERM DECLINE"
-        return base_signal, avgs
-
-    # 3. Penny stock risk filter
-    if end_price < 5:
-        base_signal = "SPECULATIVE - HIGH RISK"
-        return base_signal, avgs
-
-    # 4. Standard BUY/HOLD logic
-    price_change_pct = (end_price - avgs["avg_12m"]) / avgs["avg_12m"]
-
-    if price_change_pct <= -0.2:
-        base_signal = "BUY"
-    else:
-        base_signal = "HOLD"
-
-    return base_signal, avgs
-
-
-def fetch_indicators(symbol):
-    """Fetch price + fundamentals + company name."""
-    try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-
-        hist = ticker.history(period="1d")
-        price = hist["Close"].iloc[-1] if not hist.empty else None
-
-        return {
-            "Company Name": info.get("longName") or info.get("shortName") or "N/A",
-            "Stock Price": round(float(price), 2) if price else None,
-            "Market Cap (M)": f"{info.get('marketCap', 0) / 1_000_000:,.0f}" if info.get("marketCap") else None,
-            "PE Ratio": round(info.get("trailingPE"), 2) if info.get("trailingPE") else None,
-            "EPS": info.get("trailingEps"),
-            "Dividend Yield": info.get("dividendYield"),
-            "52W High": info.get("fiftyTwoWeekHigh"),
-            "52W Low": info.get("fiftyTwoWeekLow"),
-        }
-    except:
-        return {"Company Name": "N/A"}
-
-
-def analyze_stock(symbol):
-    """Full pipeline for one stock."""
-    data = fetch_history(symbol)
-    if data is None:
-        return None
-
-    base_signal, avgs = generate_signal(data)
-    risk_score = compute_risk_score(data)
-    momentum_score = compute_momentum_score(data, avgs)
-    light = traffic_light(base_signal, risk_score, momentum_score)
-    indicators = fetch_indicators(symbol)
-
-    return {
-        "Symbol": symbol,
-        "Signal": base_signal,
-        "Traffic Light": light,
-        "Risk Score": risk_score,
-        "Momentum Score": momentum_score,
-        "Avg 3M": avgs["avg_3m"],
-        "Avg 6M": avgs["avg_6m"],
-        "Avg 12M": avgs["avg_12m"],
-        "Avg 24M": avgs["avg_24m"],
-        **indicators
->>>>>>> d338b99beb2aa3de7fca642818511d14821c59a4
-    }
+    "ticker": symbol,
+    "under_control": under_control,
+    "drift_direction": drift,
+    "buy_signal": buy_signal,
+    "sell_signal": sell_signal,
+    "days_since_buy": days_since_buy,
+    "days_under_control": days_under_control,
+    "confidence": confidence,
+    "band_width": band_width,
+    "indicators": {
+        "price": float(price),
+        "ma20": float(ma20),
+        "upper_limit": float(ucl),
+        "lower_limit": float(lcl),
+        "rsi": float(rsi) if rsi is not None else None,
+        "slope_5d": float(slope_5d),
+        "bollinger_position": bollinger_pos,
+    },
+}
