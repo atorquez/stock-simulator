@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from stock_engine import analyze_stock
 
+# Force Streamlit Cloud rebuild - Feb 24,2026
+
 # Page layout
 st.set_page_config(layout="wide")
 
