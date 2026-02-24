@@ -303,6 +303,8 @@ def fetch_indicators(symbol):
     except Exception:
         return {}
 
+
+
 # ---------------------------------------
 # FULL LONG-TERM ANALYSIS
 # ---------------------------------------
@@ -460,12 +462,13 @@ def analyze_trading_signals(
 
     # BUY RULE
     if band_width > 0:
-        lower_zone_threshold = lcl + 0.50 * (ucl - lcl)
+        lower_zone_threshold = lcl + 0.30 * (ucl - lcl)
         price_in_lower_zone = price <= lower_zone_threshold
     else:
         price_in_lower_zone = False
 
     drift_is_down = (drift == "down")
+    #drift_is_down = True  # TEMPORARY for debugging
     is_under_control = (under_control is True)
     rsi_ok_for_buy = (rsi is not None and rsi < 60)
 
@@ -478,7 +481,7 @@ def analyze_trading_signals(
 
     # SELL RULE
     if band_width > 0:
-        upper_zone_threshold = ucl - 0.20 * (ucl - lcl)
+        upper_zone_threshold = ucl - 0.30 * (ucl - lcl)
         price_in_upper_zone = price >= upper_zone_threshold
     else:
         price_in_upper_zone = False
@@ -555,23 +558,23 @@ def analyze_trading_signals(
 
     # FINAL RETURN — ALWAYS SAFE
     return {
-        "ticker": symbol,
-        "company_name": company_name,
-        "under_control": False,
-        "drift_direction": None,
-        "buy_signal": False,
-        "sell_signal": False,
-        "days_since_buy": None,
-        "days_under_control": 0,
-        "confidence": 0,
-        "band_width": 0,
-        "indicators": {
-            "price": 0,
-            "ma20": 0,
-            "upper_limit": 0,
-            "lower_limit": 0,
-            "rsi": 0,
-            "slope_5d": 0,
-            "bollinger_position": 0,
+    "ticker": symbol,
+    "company_name": company_name,
+    "under_control": under_control,
+    "drift_direction": drift,
+    "buy_signal": buy_signal,
+    "sell_signal": sell_signal,
+    "days_since_buy": days_since_buy,
+    "days_under_control": days_under_control,
+    "confidence": confidence,
+    "band_width": band_width,
+    "indicators": {
+        "price": float(price),
+        "ma20": float(ma20),
+        "upper_limit": float(ucl),
+        "lower_limit": float(lcl),
+        "rsi": float(rsi) if rsi is not None else None,
+        "slope_5d": float(slope_5d),
+        "bollinger_position": float(bollinger_pos),
     }
 }
